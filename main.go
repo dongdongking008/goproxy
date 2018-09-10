@@ -63,7 +63,7 @@ func mainHandler(inner http.Handler) http.Handler {
 				}
 				// ignore the error, incorrect tag may be given
 				// forward to inner.ServeHTTP
-				goGet(path, version, suffix, w, r)
+				goModDownload(path, version, suffix, w, r)
 			}
 			if strings.HasSuffix(r.URL.Path, "/@v/list") {
 				w.WriteHeader(200)
@@ -75,8 +75,8 @@ func mainHandler(inner http.Handler) http.Handler {
 	})
 }
 
-func goGet(path, version, suffix string, w http.ResponseWriter, r *http.Request) error {
-	cmd := exec.Command("go", "get", "-d", path+"@"+version)
+func goModDownload(path, version, suffix string, w http.ResponseWriter, r *http.Request) error {
+	cmd := exec.Command("go", "mod", "download", path+"@"+version)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return err
