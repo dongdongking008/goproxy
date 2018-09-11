@@ -58,7 +58,7 @@ LABEL maintainer="dongdongking008 <dongdongking008@gmail.com>"
 RUN apk --update add openssh-client git && \
     rm -rf /var/cache/apk/*
 
-COPY --from=go-builder /go/bin /app
+COPY --from=go-builder /usr/local/go/bin /usr/local/go/bin
 COPY --from=builder /app /app
 
 WORKDIR /app
