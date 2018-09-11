@@ -12,6 +12,9 @@ COPY go.mod /app
 FROM golang:1.11-alpine3.8
 LABEL maintainer="dongdongking008 <dongdongking008@gmail.com>"
 
+RUN apk --update add openssh-client git && \
+    rm -rf /var/cache/apk/*
+
 COPY --from=builder /app /app
 
 WORKDIR /app
