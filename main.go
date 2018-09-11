@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/goproxyio/goproxy/replacerule"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -15,6 +16,7 @@ import (
 
 var cacheDir string
 var listen string
+var replaceManager *replacerule.RuleManager
 
 func init() {
 	flag.StringVar(&listen, "listen", "0.0.0.0:8081", "service listen address")
@@ -27,6 +29,8 @@ func main() {
 		panic("can not find $GOPATH")
 	}
 	gp := filepath.SplitList(gpEnv)
+	rpEnv := os.Getenv("GOPROXY_REPLACERULES")
+	replaceManager = replacerule.GetManager(rpEnv)
 	cacheDir = filepath.Join(gp[0], "pkg", "mod", "cache", "download")
 	http.Handle("/", mainHandler(http.FileServer(http.Dir(cacheDir))))
 	err := http.ListenAndServe(listen, nil)
@@ -75,7 +79,8 @@ func mainHandler(inner http.Handler) http.Handler {
 	})
 }
 
-func goModDownload(path, version, suffix string, w http.ResponseWriter, r *http.Request) error {
+func goModDownload(opath, version, suffix string, w http.ResponseWriter, r *http.Request) error {
+	path := replaceManager.Replace(opath)
 	cmd := exec.Command("go", "mod", "download", path+"@"+version)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -107,6 +112,9 @@ func goModDownload(path, version, suffix string, w http.ResponseWriter, r *http.
 	}
 	out := fmt.Sprintf("%s", bytesErr)
 
+	if opath != path {
+		replaceMod(opath, path)
+	}
 	for _, line := range strings.Split(out, "\n") {
 		f := strings.Fields(line)
 		if len(f) != 4 {
@@ -123,6 +131,44 @@ func goModDownload(path, version, suffix string, w http.ResponseWriter, r *http.
 			url := fmt.Sprintf("%s//%s/%s", scheme, h, p)
 			http.Redirect(w, r, url, 302)
 		}
+	}
+	return nil
+}
+
+func replaceMod(opath string, path string) error {
+	oDir := filepath.Join(cacheDir, opath)
+	dir := filepath.Join(cacheDir, path)
+	if _, err := os.Stat(oDir); err != nil && os.IsNotExist(err) {
+		os.MkdirAll(oDir, os.ModeDir)
+	}
+	cmd := exec.Command("cp", "-rfu", dir+"/*", oDir)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return err
+	}
+
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+
+	bytesErr, err := ioutil.ReadAll(stderr)
+	if err != nil {
+		return err
+	}
+
+	bytesOut, err := ioutil.ReadAll(stdout)
+	if err != nil {
+		return err
+	}
+
+	if err := cmd.Wait(); err != nil {
+		fmt.Fprintf(os.Stdout, "goproxy: cp %s to %s stdout: %s stderr: %s\n", path, opath, string(bytesOut), string(bytesErr))
+		return err
 	}
 	return nil
 }
