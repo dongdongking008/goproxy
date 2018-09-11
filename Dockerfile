@@ -10,7 +10,7 @@ RUN cd /go/src/goproxy &&\
 FROM alpine:3.8
 LABEL maintainer="dongdongking008 <dongdongking008@gmail.com>"
 
-COPY --from=builder /app /
+COPY --from=builder /app /app
 
 WORKDIR /app
 
