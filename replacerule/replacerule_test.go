@@ -6,8 +6,8 @@ import (
 
 func TestParseOneRule(t *testing.T) {
 	manager := GetManager("mtime.com/(.*) gitlab.mtime-dev.com/go/$1.git")
-	path := manager.Replace("mtime.com/demo")
-	if path != "gitlab.mtime-dev.com/go/demo.git" {
+	path := manager.Replace("mtime.com/core/auxom")
+	if path != "gitlab.mtime-dev.com/go/core/auxom.git" {
 		t.Errorf("error path: %s", path)
 	} else {
 		t.Logf("path: %s", path)

@@ -43,6 +43,10 @@ func GetManager(ruleString string) *RuleManager {
 			return len(jStr) < len(iStr)
 		}
 	})
+
+	for _, ruleStr := range manager.rules {
+		fmt.Printf("goproxy: replacerule: %s %s\n", ruleStr.regex.String(), ruleStr.replace)
+	}
 	return manager
 }
 

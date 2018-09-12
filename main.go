@@ -1,9 +1,12 @@
 package main
 
 import (
+	"archive/zip"
 	"flag"
 	"fmt"
+	"github.com/goproxyio/goproxy/dirhash"
 	"github.com/goproxyio/goproxy/replacerule"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -113,7 +116,11 @@ func goGet(opath, version, suffix string, w http.ResponseWriter, r *http.Request
 	out := fmt.Sprintf("%s", bytesErr)
 
 	if opath != path {
-		replaceMod(opath, path)
+		err := replaceMod(opath, path)
+		if err != nil {
+			fmt.Printf("goproxy: copy %s to %s error: %s\n", path, opath, err)
+			return err
+		}
 	}
 	for _, line := range strings.Split(out, "\n") {
 		f := strings.Fields(line)
@@ -141,7 +148,9 @@ func replaceMod(opath string, path string) error {
 	if _, err := os.Stat(oDir); err != nil && os.IsNotExist(err) {
 		os.MkdirAll(oDir, os.ModeDir)
 	}
-	cmd := exec.Command("cp", "-rfu", dir+"/*", oDir)
+
+	cpCMD := fmt.Sprintf("cp -rfu %s/* %s", dir, oDir)
+	cmd := exec.Command("/bin/sh", "-c", cpCMD)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return err
@@ -168,6 +177,109 @@ func replaceMod(opath string, path string) error {
 
 	if err := cmd.Wait(); err != nil {
 		fmt.Fprintf(os.Stdout, "goproxy: cp %s to %s stdout: %s stderr: %s\n", path, opath, string(bytesOut), string(bytesErr))
+		return err
+	}
+
+	zipFiles, err := filepath.Glob(oDir + "/@v/*.zip")
+	if err != nil {
+		return err
+	}
+	for _, f := range zipFiles {
+		err := replaceZip(f, path, opath)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func replaceZip(zipFile string, path string, opath string) error {
+	tempZipFile := zipFile + ".tmp"
+	err := copyZip(zipFile, tempZipFile, path, opath)
+	if err != nil {
+		return err
+	}
+
+	cmd := exec.Command("mv", tempZipFile, zipFile)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return err
+	}
+
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+
+	bytesErr, err := ioutil.ReadAll(stderr)
+	if err != nil {
+		return err
+	}
+
+	bytesOut, err := ioutil.ReadAll(stdout)
+	if err != nil {
+		return err
+	}
+
+	if err := cmd.Wait(); err != nil {
+		fmt.Printf("goproxy: mv %s %s stdout: %s stderr: %s\n", tempZipFile, zipFile, string(bytesOut), string(bytesErr))
+		return err
+	}
+
+	ziphash, err := dirhash.HashZip(zipFile, dirhash.Hash1)
+	if err != nil {
+		return err
+	}
+
+	err = ioutil.WriteFile(zipFile+"hash", []byte(ziphash), os.ModeAppend)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func copyZip(zipFile string, tempZipFile string, path string, opath string) error {
+	zipReader, err := zip.OpenReader(zipFile)
+	if err != nil {
+		return err
+	}
+	defer zipReader.Close()
+
+	fileWrite, err := os.Create(tempZipFile)
+	if err != nil {
+		return err
+	}
+	defer fileWrite.Close()
+
+	zipWriter := zip.NewWriter(fileWrite)
+	for _, file := range zipReader.File {
+
+		rc, err := file.Open()
+		if err != nil {
+			return err
+		}
+
+		zipHeader := file.FileHeader
+		zipHeader.Name = strings.Replace(zipHeader.Name, path, opath, 1)
+
+		f, err := zipWriter.CreateHeader(&zipHeader)
+		if err != nil {
+			return err
+		}
+		_, err = io.Copy(f, rc)
+		if err != nil {
+			return err
+		}
+		rc.Close()
+	}
+
+	err = zipWriter.Close()
+	if err != nil {
 		return err
 	}
 	return nil
